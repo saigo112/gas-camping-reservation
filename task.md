@@ -1,0 +1,25 @@
+# Tasks
+
+- [ ] Setup Local GAS Environment
+    - [x] Clone GAS project using `clasp clone` <!-- id: 0 -->
+    - [x] Verify downloaded files <!-- id: 1 -->
+    - [x] Move files to `gas-project` directory <!-- id: 1.5 -->
+- [x] Plan Nap Support Extension
+    - [x] Create implementation plan for Nap platform support <!-- id: 3 -->
+    - [x] Receive and save actual Nap email sample <!-- id: 3.1 -->
+- [x] Implement Nap Support
+    - [x] Update config.js with Nap platform settings <!-- id: 4 -->
+    - [x] Modify gmail_to_sheets.js for multi-platform support <!-- id: 5 -->
+    - [x] Update webapp.js to include platform field <!-- id: 6 -->
+    - [x] Update index.html UI to display platform badges <!-- id: 7 -->
+    - [x] Update sync_calendar.js to include platform in event title <!-- id: 8 -->
+- [x] Deploy and Verify
+    - [x] Push code to GAS using clasp <!-- id: 9 -->
+    - [x] Create walkthrough document <!-- id: 10 -->
+- [x] Documentation Localization
+    - [x] Translate walkthrough.md to Japanese <!-- id: 11 -->
+    - [x] Translate English sections in implementation_plan.md to Japanese <!-- id: 12 -->
+- [x] Source Control (GitHub)
+    - [x] Initialize git repository <!-- id: 13 -->
+    - [x] Create README.md <!-- id: 14 -->
+    - [x] Create GitHub repository and push code <!-- id: 15 -->
