@@ -6,27 +6,21 @@
  * - config.gs の extractor 設定で prod/test を切り替える
  *
  * 仕様:
- * - Gmailから楽天トラベルキャンプ・なっぷの予約確定/キャンセルメールを抽出してシートへ追記
+ * - Gmailから楽天トラベルキャンプ・なっぷの予約確定/キャンセルメールを抽出して該当シートへ追記
  * - 予約ID重複はスキップ（予約元+予約IDの組み合わせで判定）
  * - config.gsのSEARCH_PERIODで抽出期間を設定
  * - キャンセルメールは既存行のステータスを「キャンセル済み」に更新
  * - 二重抽出防止のため、gmailフォルダでラベルがつくので再抽出する場合はラベルを削除する必要あり
  * - チェックイン/アウトは Date 型でシートへ書き込み
- * ステータス仕様:
- * 1) 件名「予約が確定しました」「ご予約ありがとうございます」 → 新規行追加、ステータス「予約中」
- * 2) 件名「予約がキャンセルされました」「キャンセル」 → 予約ID一致行のステータスを「キャンセル済み」に更新
- * 3) ステータス「予約中」かつ チェックイン日時 <= 現在 → 「チェックイン完了」に更新
  */
 
 function extractAllPlatformEmails() {
   const CFG = getAppConfig_();
 
   const SHEET_ID = CFG.SHEET_ID;
-  const SHEET_NAME = CFG.extractor.SHEET_NAME;
   const PROCESSED_LABEL = CFG.extractor.PROCESSED_LABEL;
   const MAX_THREADS = CFG.extractor.MAX_THREADS;
   const ADD_LABEL = !!CFG.extractor.ADD_LABEL;
-  // ★設定ファイルから期間を取得（デフォルトは7d）
   const SEARCH_PERIOD = CFG.extractor.SEARCH_PERIOD || '7d';
   const PLATFORMS = CFG.extractor.PLATFORMS;
 
@@ -37,38 +31,42 @@ function extractAllPlatformEmails() {
   ];
 
   const lock = LockService.getScriptLock();
-  // 30秒待機
   if (!lock.tryLock(30 * 1000)) {
     Logger.log('他のプロセスが実行中のためスキップしました');
     return;
   }
 
   try {
-    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
-    if (!sheet) throw new Error(`シートが見つかりません: ${SHEET_NAME}`);
+    const ss = SpreadsheetApp.openById(SHEET_ID);
 
-    // ヘッダー整備
-    const header = ensureHeaders_(sheet, EXPECTED_HEADERS);
-    const col = Object.fromEntries(header.map((h, i) => [String(h).trim(), i + 1])); // 1-based
-    const totalCols = sheet.getLastColumn();
+    // シートの取得と初期化
+    const sheets = {};
+    const cols = {};
+    const totalCols = {};
+    const idToRow = new Map(); // "platformObjKey:reservationId" -> rowNumber (1-based)
 
-    // Gmailラベル
+    ['rakuten', 'nap'].forEach(plat => {
+      const sheetName = PLATFORMS[plat].SHEET_NAME;
+      const sheet = ss.getSheetByName(sheetName);
+      if (!sheet) throw new Error(`シートが見つかりません: ${sheetName}`);
+
+      sheets[plat] = sheet;
+      const header = ensureHeaders_(sheet, EXPECTED_HEADERS);
+      cols[plat] = Object.fromEntries(header.map((h, i) => [String(h).trim(), i + 1]));
+      totalCols[plat] = sheet.getLastColumn();
+
+      const all = sheet.getDataRange().getValues();
+      for (let r = 1; r < all.length; r++) {
+        const id = String(all[r][cols[plat]['予約ID'] - 1] || '').trim();
+        if (id) {
+          idToRow.set(`${plat}:${id}`, r + 1);
+        }
+      }
+    });
+
     const label = GmailApp.getUserLabelByName(PROCESSED_LABEL) || GmailApp.createLabel(PROCESSED_LABEL);
     const labeledIds = getLabeledThreadIdSet_(label);
 
-    // シート現状を一度だけ読み、「予約元+予約ID」→行番号（1-based）のMapを作る
-    const all = sheet.getDataRange().getValues();
-    const idToRow = new Map(); // "platform:reservationId" -> rowNumber (1-based)
-    for (let r = 1; r < all.length; r++) {
-      const platform = String(all[r][col['予約元'] - 1] || '').trim();
-      const id = String(all[r][col['予約ID'] - 1] || '').trim();
-      if (id) {
-        const key = platform ? `${platform}:${id}` : id; // 予約元がある場合は組み合わせ
-        idToRow.set(key, r + 1);
-      }
-    }
-
-    // Gmail検索（両プラットフォーム対応）
     const query = [
       '(',
       `from:${PLATFORMS.rakuten.FROM}`,
@@ -81,12 +79,12 @@ function extractAllPlatformEmails() {
     Logger.log(`検索クエリ: ${query}`);
     const threads = GmailApp.search(query, 0, MAX_THREADS);
 
-    // ===== 実行内整合用バッファ =====
-    const canceledIds = new Set();     // 「platform:予約ID」のキャンセルセット
-    const confirmMap = new Map();      // 「platform:予約ID」 -> extracted info（確定メールの抽出結果）
-    const threadsToLabel = new Set();  // 今回処理対象になったスレッドID
+    Logger.log(`検索結果スレッド数: ${threads.length}`);
 
-    // まず全件スキャン（書き込みしない）
+    const canceledIds = new Set();
+    const confirmMap = new Map();
+    const threadsToLabel = new Set();
+
     threads.forEach(th => {
       const isLabeled = labeledIds.has(th.getId());
 
@@ -94,19 +92,18 @@ function extractAllPlatformEmails() {
         const subject = msg.getSubject() || '';
         const body = msg.getPlainBody() || msg.getBody() || '';
 
-        // プラットフォーム検出
         const platform = detectPlatform_(msg, PLATFORMS);
-        if (!platform) return; // 未対応プラットフォーム
+        if (!platform) {
+          // Logger.log(`プラットフォーム未検出: From=${msg.getFrom()}, Subject=${subject}`);
+          return;
+        }
 
-        // プラットフォーム名の日本語表記
         const platformName = platform === 'rakuten' ? '楽天トラベル' : 'なっぷ';
 
-        // 予約IDの抽出（プラットフォームごとに異なる）
         let reservationId = '';
         if (platform === 'rakuten') {
           reservationId = pick_(body, /(?:予約ID|予約ＩＤ)[^\S\r\n]*[:：]?\s*([A-Z0-9-]+)/i);
         } else if (platform === 'nap') {
-          // なっぷは「予約詳細番号」または件名から取得
           reservationId = pick_(body, /予約詳細番号[^:：]*[:：]\s*([A-Z0-9-]+)/);
           if (!reservationId) {
             const subjMatch = subject.match(/([A-Z0-9]+-\d+)/);
@@ -114,12 +111,13 @@ function extractAllPlatformEmails() {
           }
         }
 
-        if (!reservationId) return;
+        if (!reservationId) {
+          Logger.log(`予約ID抽出失敗 [${platformName}]: ${subject}`);
+          return;
+        }
 
-        // 「プラットフォーム:予約ID」の組み合わせをキーとする
-        const idKey = `${platformName}:${reservationId}`;
+        const idKey = `${platform}:${reservationId}`;
 
-        // ラベル済みスレッドは「キャンセル検出だけ」で十分
         const isCancel = (platform === 'rakuten' && subject.includes(PLATFORMS.rakuten.CANCEL_SUBJECT)) ||
           (platform === 'nap' && subject.includes(PLATFORMS.nap.CANCEL_SUBJECT));
         const isConfirm = (platform === 'rakuten' && subject.includes(PLATFORMS.rakuten.CONFIRM_SUBJECT)) ||
@@ -129,27 +127,30 @@ function extractAllPlatformEmails() {
 
         threadsToLabel.add(th.getId());
 
-        // キャンセルメール処理
         if (isCancel) {
+          Logger.log(`キャンセルメール検出: ${idKey} (${subject})`);
           canceledIds.add(idKey);
           return;
         }
 
-        // 確定メール処理
         if (isConfirm) {
+          Logger.log(`確定メール検出: ${idKey} (${subject})`);
           const msgDate = msg.getDate();
           const existing = confirmMap.get(idKey);
           if (existing && existing.msgDate && existing.msgDate.getTime() >= msgDate.getTime()) return;
 
-          // プラットフォームごとに適切な抽出関数を使用
           const extracted = platform === 'rakuten'
             ? extractReservationDataFromBody_(body)
             : extractNapReservationData_(body);
 
-          if (!extracted || !isValidDate_(extracted.checkInDate) || !extracted.name) return;
+          if (!extracted || !isValidDate_(extracted.checkInDate) || !extracted.name) {
+            Logger.log(`抽出不十分 [${idKey}]: Name=${extracted ? extracted.name : 'N/A'}, CheckIn=${extracted ? extracted.checkInDate : 'N/A'}`);
+            return;
+          }
 
           confirmMap.set(idKey, {
-            platform: platformName,
+            platformKey: platform,
+            platformName: platformName,
             reservationId,
             msgDate: extracted.msgDate || msgDate,
             thread: th,
@@ -159,70 +160,71 @@ function extractAllPlatformEmails() {
       });
     });
 
-    // ===== 2) キャンセルを先に反映（既存行があるなら即キャンセル済み） =====
-    if (col['ステータス']) {
-      canceledIds.forEach(id => {
-        const rowNum = idToRow.get(id);
-        if (rowNum) {
-          sheet.getRange(rowNum, col['ステータス']).setValue('キャンセル済み');
+    // 2) キャンセルを先に反映
+    canceledIds.forEach(idKey => {
+      const rowNum = idToRow.get(idKey);
+      if (rowNum) {
+        const plat = idKey.split(':')[0];
+        const statusCol = cols[plat]['ステータス'];
+        if (statusCol) {
+          sheets[plat].getRange(rowNum, statusCol).setValue('キャンセル済み');
         }
-      });
-    }
+      }
+    });
 
-    // ===== 1) 確定データを挿入 =====
-    const rowsToInsert = [];
+    // 1) 確定データを挿入（プラットフォームごとに振り分け）
+    const rowsToInsert = { rakuten: [], nap: [] };
 
     confirmMap.forEach(info => {
-      const id = info.reservationId;
-      const platform = info.platform;
-      const idKey = `${platform}:${id}`;
+      const plat = info.platformKey;
+      const idKey = `${plat}:${info.reservationId}`;
 
-      // `idKey`でチェック (platform+ID の組み合わせ)
       if (idToRow.has(idKey)) return;
 
       const status = canceledIds.has(idKey) ? 'キャンセル済み' : '予約中';
+      const c = cols[plat];
 
-      const row = new Array(totalCols).fill('');
-      if (col['予約日時']) row[col['予約日時'] - 1] = info.msgDate;
-      if (col['予約ID']) row[col['予約ID'] - 1] = id;
-      if (col['予約元']) row[col['予約元'] - 1] = platform;
-      if (col['チェックイン日時']) row[col['チェックイン日時'] - 1] = info.checkInDate;
-      if (col['チェックアウト日時']) row[col['チェックアウト日時'] - 1] = info.checkOutDate || '';
-      if (col['サイト名']) row[col['サイト名'] - 1] = info.siteName || '';
-      if (col['サイト数']) row[col['サイト数'] - 1] = info.siteCount || '';
-      if (col['大人']) row[col['大人'] - 1] = info.adult;
-      if (col['子供']) row[col['子供'] - 1] = info.child;
-      if (col['幼児']) row[col['幼児'] - 1] = info.infant;
-      if (col['名前']) row[col['名前'] - 1] = info.name.trim();
-      // ★電話番号の修正: ""を付けて0落ちを防止
-      if (col['電話番号']) row[col['電話番号'] - 1] = info.phone ? '"' + String(info.phone).trim() + '"' : '';
-      if (col['メールアドレス']) row[col['メールアドレス'] - 1] = info.email ? String(info.email).trim() : '';
-      if (col['備考']) row[col['備考'] - 1] = info.remarks || '';
-      if (col['料金']) row[col['料金'] - 1] = info.totalPrice || '';
-      if (col['ステータス']) row[col['ステータス'] - 1] = status;
+      const row = new Array(totalCols[plat]).fill('');
+      if (c['予約日時']) row[c['予約日時'] - 1] = info.msgDate;
+      if (c['予約ID']) row[c['予約ID'] - 1] = info.reservationId;
+      if (c['予約元']) row[c['予約元'] - 1] = info.platformName;
+      if (c['チェックイン日時']) row[c['チェックイン日時'] - 1] = info.checkInDate;
+      if (c['チェックアウト日時']) row[c['チェックアウト日時'] - 1] = info.checkOutDate || '';
+      if (c['サイト名']) row[c['サイト名'] - 1] = info.siteName || '';
+      if (c['サイト数']) row[c['サイト数'] - 1] = info.siteCount || '';
+      if (c['大人']) row[c['大人'] - 1] = info.adult;
+      if (c['子供']) row[c['子供'] - 1] = info.child;
+      if (c['幼児']) row[c['幼児'] - 1] = info.infant;
+      if (c['名前']) row[c['名前'] - 1] = info.name.trim();
+      if (c['電話番号']) row[c['電話番号'] - 1] = info.phone ? '"' + String(info.phone).trim() + '"' : '';
+      if (c['メールアドレス']) row[c['メールアドレス'] - 1] = info.email ? String(info.email).trim() : '';
+      if (c['備考']) row[c['備考'] - 1] = info.remarks || '';
+      if (c['料金']) row[c['料金'] - 1] = info.totalPrice || '';
+      if (c['ステータス']) row[c['ステータス'] - 1] = status;
 
-      rowsToInsert.push({ thread: info.thread, row });
+      rowsToInsert[plat].push({ thread: info.thread, row });
     });
 
-    if (rowsToInsert.length) {
-      sheet.insertRowsBefore(2, rowsToInsert.length);
-      const valuesToWrite = rowsToInsert.slice().reverse().map(i => i.row);
-      sheet.getRange(2, 1, valuesToWrite.length, totalCols).setValues(valuesToWrite);
+    ['rakuten', 'nap'].forEach(plat => {
+      if (rowsToInsert[plat].length) {
+        const sheet = sheets[plat];
+        const rows = rowsToInsert[plat];
+        sheet.insertRowsBefore(2, rows.length);
+        const valuesToWrite = rows.slice().reverse().map(i => i.row);
+        sheet.getRange(2, 1, valuesToWrite.length, totalCols[plat]).setValues(valuesToWrite);
 
-      // 予約IDはテキストにしておく
-      if (col['予約ID']) sheet.getRange(2, col['予約ID'], sheet.getLastRow() - 1, 1).setNumberFormat('@');
+        if (cols[plat]['予約ID']) sheet.getRange(2, cols[plat]['予約ID'], sheet.getLastRow() - 1, 1).setNumberFormat('@');
+        if (cols[plat]['電話番号']) sheet.getRange(2, cols[plat]['電話番号'], sheet.getLastRow() - 1, 1).setNumberFormat('@');
+      }
 
-      // ★電話番号も明示的にテキスト形式にしておく（念のため）
-      if (col['電話番号']) sheet.getRange(2, col['電話番号'], sheet.getLastRow() - 1, 1).setNumberFormat('@');
-    }
+      // 3) チェックイン完了更新
+      updateCheckinCompleted_(sheets[plat], cols[plat]);
 
-    // ===== 3) チェックイン完了更新 =====
-    updateCheckinCompleted_(sheet, col);
-
-    // ===== ソート（予約日時 降順） =====
-    if (sheet.getLastRow() > 1 && col['予約日時']) {
-      sheet.getRange(2, 1, sheet.getLastRow() - 1, totalCols).sort({ column: col['予約日時'], ascending: false });
-    }
+      // ソート
+      if (sheets[plat].getLastRow() > 1 && cols[plat]['予約日時']) {
+        sheets[plat].getRange(2, 1, sheets[plat].getLastRow() - 1, totalCols[plat]).sort({ column: cols[plat]['予約日時'], ascending: false });
+      }
+    });
 
     // ===== ラベル付与 =====
     if (ADD_LABEL) {

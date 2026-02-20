@@ -14,46 +14,60 @@ function doGet() {
 // 2. スプレッドシートのデータを取得してHTMLに送る関数
 function getDataForWeb() {
   const CFG = getAppConfig_();
-  const sheet = SpreadsheetApp.openById(CFG.SHEET_ID).getSheetByName(CFG.extractor.SHEET_NAME);
+  const ss = SpreadsheetApp.openById(CFG.SHEET_ID);
 
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return [];
+  let allDisplayData = [];
 
-  const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const colMap = {};
-  headers.forEach((h, i) => { colMap[String(h).trim()] = i; });
+  ['rakuten', 'nap'].forEach(plat => {
+    const sheetName = CFG.extractor.PLATFORMS[plat].SHEET_NAME;
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return;
 
-  const displayData = data.map(row => {
-    // 日付オブジェクトを取得
-    const startObj = row[colMap['チェックイン日時']];
-    const endObj = row[colMap['チェックアウト日時']];
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return;
 
-    return {
-      id: row[colMap['予約ID']],
-      platform: row[colMap['予約元']] || '楽天トラベル', // 予約元（デフォルトは楽天）
-      status: row[colMap['ステータス']],
-      // 表示用の短い形式（既存）
-      checkIn: formatDate_(startObj),
-      checkOut: formatDate_(endObj),
-      // ★追加：カレンダー描画用の完全な日付データ（ISO文字列）
-      startIso: (startObj instanceof Date) ? startObj.toISOString() : null,
-      endIso: (endObj instanceof Date) ? endObj.toISOString() : null,
+    const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const colMap = {};
+    headers.forEach((h, i) => { colMap[String(h).trim()] = i; });
 
-      name: row[colMap['名前']],
-      site: row[colMap['サイト名']],
-      siteCount: row[colMap['サイト数']],
-      phone: row[colMap['電話番号']],
-      email: row[colMap['メールアドレス']],
-      price: row[colMap['料金']],
-      adult: row[colMap['大人']],
-      child: row[colMap['子供']],
-      infant: row[colMap['幼児']],
-      remarks: row[colMap['備考']]
-    };
+    const displayData = data.map(row => {
+      // 日付オブジェクトを取得
+      const startObj = row[colMap['チェックイン日時']];
+      const endObj = row[colMap['チェックアウト日時']];
+
+      return {
+        id: row[colMap['予約ID']],
+        platform: row[colMap['予約元']] || (plat === 'rakuten' ? '楽天トラベル' : 'なっぷ'),
+        status: row[colMap['ステータス']],
+        checkIn: formatDate_(startObj),
+        checkOut: formatDate_(endObj),
+        startIso: (startObj instanceof Date) ? startObj.toISOString() : null,
+        endIso: (endObj instanceof Date) ? endObj.toISOString() : null,
+        name: row[colMap['名前']],
+        site: row[colMap['サイト名']],
+        siteCount: row[colMap['サイト数']],
+        phone: row[colMap['電話番号']],
+        email: row[colMap['メールアドレス']],
+        price: row[colMap['料金']],
+        adult: row[colMap['大人']],
+        child: row[colMap['子供']],
+        infant: row[colMap['幼児']],
+        remarks: row[colMap['備考']]
+      };
+    });
+
+    allDisplayData = allDisplayData.concat(displayData);
   });
 
-  return displayData;
+  // 必要に応じて統合後のデータをソート（例：チェックイン日時の降順/昇順など）
+  allDisplayData.sort((a, b) => {
+    if (!a.startIso) return 1;
+    if (!b.startIso) return -1;
+    return new Date(a.startIso) - new Date(b.startIso);
+  });
+
+  return allDisplayData;
 }
 
 // 日付フォーマット用ヘルパー
@@ -65,30 +79,33 @@ function formatDate_(date) {
 // 3. ステータスを更新する関数（画面から呼ばれる）
 function updateReservationStatus(reservationId, newStatus) {
   const CFG = getAppConfig_();
-  const sheet = SpreadsheetApp.openById(CFG.SHEET_ID).getSheetByName(CFG.extractor.SHEET_NAME);
+  const ss = SpreadsheetApp.openById(CFG.SHEET_ID);
 
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const colMap = {};
-  headers.forEach((h, i) => { colMap[String(h).trim()] = i; });
+  for (const plat of ['rakuten', 'nap']) {
+    const sheetName = CFG.extractor.PLATFORMS[plat].SHEET_NAME;
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) continue;
 
-  // 予約IDの列番号（0始まり）
-  const idColIndex = colMap['予約ID'];
-  const statusColIndex = colMap['ステータス'];
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    if (!headers) continue;
 
-  // IDが一致する行を探す
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idColIndex]) === String(reservationId)) {
-      // ステータスを更新（行番号は i+1）
-      sheet.getRange(i + 1, statusColIndex + 1).setValue(newStatus);
+    const colMap = {};
+    headers.forEach((h, i) => { colMap[String(h).trim()] = i; });
 
-      // ★ここでカレンダー同期も実行してしまう（即時反映）
-      // sync_calendar.gs の関数を呼ぶ
-      if (typeof syncCalendarEvents === 'function') {
-        syncCalendarEvents();
+    const idColIndex = colMap['予約ID'];
+    const statusColIndex = colMap['ステータス'];
+
+    if (idColIndex === undefined || statusColIndex === undefined) continue;
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idColIndex]) === String(reservationId)) {
+        sheet.getRange(i + 1, statusColIndex + 1).setValue(newStatus);
+        if (typeof syncCalendarEvents === 'function') {
+          syncCalendarEvents();
+        }
+        return { success: true, message: `ID:${reservationId} を「${newStatus}」に更新しました` };
       }
-
-      return { success: true, message: `ID:${reservationId} を「${newStatus}」に更新しました` };
     }
   }
 

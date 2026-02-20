@@ -45,7 +45,7 @@ function getAppConfig_() {
         MAX_THREADS: 500,
         ADD_LABEL: true,
         CLEANUP_TEST_LABEL: false,
-        SEARCH_PERIOD: '7d',
+        SEARCH_PERIOD: '30d',
         // プラットフォーム別設定
         PLATFORMS: {
           rakuten: {
@@ -81,7 +81,7 @@ function getAppConfig_() {
         MAX_THREADS: 200,
         ADD_LABEL: true,
         CLEANUP_TEST_LABEL: true,
-        SEARCH_PERIOD: '7d',
+        SEARCH_PERIOD: '30d',
         // プラットフォーム別設定（本番と同じ構造でテスト用シートを指定）
         PLATFORMS: {
           rakuten: {
