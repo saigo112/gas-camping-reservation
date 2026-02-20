@@ -1,6 +1,6 @@
 # Tasks
 
-- [ ] Setup Local GAS Environment
+- [x] Setup Local GAS Environment
     - [x] Clone GAS project using `clasp clone` <!-- id: 0 -->
     - [x] Verify downloaded files <!-- id: 1 -->
     - [x] Move files to `gas-project` directory <!-- id: 1.5 -->
@@ -23,3 +23,9 @@
     - [x] Initialize git repository <!-- id: 13 -->
     - [x] Create README.md <!-- id: 14 -->
     - [x] Create GitHub repository and push code <!-- id: 15 -->
+- [x] Verification & Testing
+    - [x] Confirm Nap cancellation email subject <!-- id: 16 -->
+    - [x] Implement email extraction debug helper in debug_tool.js <!-- id: 17 -->
+    - [x] user to verify Nap reservation email extraction using debug tool <!-- id: 18 -->
+    - [x] user to verify Nap cancellation email extraction <!-- id: 19 -->
+    - [x] Fix sync_calendar.js function call inconsistency <!-- id: 20 -->

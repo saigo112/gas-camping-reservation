@@ -49,11 +49,13 @@ function getAppConfig_() {
         // プラットフォーム別設定
         PLATFORMS: {
           rakuten: {
+            SHEET_NAME: '楽天トラベル',
             FROM: 'no-reply@camp.travel.rakuten.co.jp',
             CONFIRM_SUBJECT: '予約が確定しました',
             CANCEL_SUBJECT: '予約がキャンセルされました'
           },
           nap: {
+            SHEET_NAME: 'なっぷ',
             FROM: 'rsv@nap-camp.com',
             CONFIRM_SUBJECT: 'ご予約ありがとうございます',
             CANCEL_SUBJECT: 'キャンセル' // 要確認：実際のキャンセルメール件名
@@ -80,14 +82,16 @@ function getAppConfig_() {
         ADD_LABEL: true,
         CLEANUP_TEST_LABEL: true,
         SEARCH_PERIOD: '7d',
-        // プラットフォーム別設定（本番と同じ）
+        // プラットフォーム別設定（本番と同じ構造でテスト用シートを指定）
         PLATFORMS: {
           rakuten: {
+            SHEET_NAME: 'テスト',
             FROM: 'no-reply@camp.travel.rakuten.co.jp',
             CONFIRM_SUBJECT: '予約が確定しました',
             CANCEL_SUBJECT: '予約がキャンセルされました'
           },
           nap: {
+            SHEET_NAME: 'テスト（なっぷ）',
             FROM: 'rsv@nap-camp.com',
             CONFIRM_SUBJECT: 'ご予約ありがとうございます',
             CANCEL_SUBJECT: 'キャンセル' // 要確認：実際のキャンセルメール件名

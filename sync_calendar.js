@@ -110,15 +110,3 @@ function syncCalendarEvents() {
 function isValidDate_(d) {
   return d instanceof Date && !isNaN(d.getTime());
 }
-
-/**
- * ▼▼▼ これをトリガーに設定してください ▼▼▼
- * 全体のメイン処理（抽出 → カレンダー同期）
- */
-function mainSequence() {
-  // 1. Gmailから抽出 & チェックイン完了などのステータス更新
-  extractRakutenTravelEmails();
-
-  // 2. カレンダーへの反映（追加・削除）
-  syncCalendarEvents();
-}

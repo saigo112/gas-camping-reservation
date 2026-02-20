@@ -15,6 +15,45 @@
 > - キャンセル通知メールの件名パターン
 > - 本文内のフィールド名（予約番号、チェックイン日、チェックアウト日、人数、料金など）
 
+## 検証用ツールの追加計画
+
+ユーザーが手元で簡単になっぷメールの抽出テストを行えるよう、`debug_tool.js` にテスト関数を追加します。
+
+### [MODIFY] [debug_tool.js](file:///Users/host/Library/CloudStorage/GoogleDrive-919saigo@gmail.com/マイドライブ/006.開発用フォルダ/campsite_management/debug_tool.js)
+
+**変更内容：**
+テスト用関数の追加
+
+```javascript
+/**
+ * なっぷメール抽出のテスト実行
+ * @param {string} body - テストするメール本文（省略時はサンプルを使用）
+ */
+function testNapExtraction(body) {
+  // サンプル本文（デフォルト）
+  const sampleBody = `
+予約日時 : 2026年02月08日(日) 23時19分
+予約詳細番号 : NAPRSV-123456789
+チェックイン日時 : 2026年03月14日(土) 13時00分
+チェックアウト日時 : 2026年03月15日(日) 10時00分
+代表者氏名 : テスト 太郎
+代表者連絡先 : 090-1234-5678
+お客様のメールアドレス : test@example.com
+利用料総額 : 5,000円
+  `;
+  
+  const targetBody = body || sampleBody;
+  Logger.log('--- テスト実行開始 ---');
+  try {
+    const result = extractNapReservationData_(targetBody);
+    Logger.log('抽出結果:\n' + JSON.stringify(result, null, 2));
+  } catch (e) {
+    Logger.log('エラー発生: ' + e.toString());
+  }
+  Logger.log('--- テスト実行終了 ---');
+}
+```
+
 > [!WARNING]
 > **既存の楽天トラベル機能への影響**
 > 
