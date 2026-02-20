@@ -802,13 +802,23 @@
       const calendarEl = document.getElementById('calendar');
       const events = allData.map(row => {
         let color = '#2E7D32'; // その他
-        if (row.status === '予約中') color = COLOR_RESERVE;
-        if (row.status === 'チェックイン完了') color = COLOR_CHECKIN;
-        if (row.status === 'キャンセル済み') color = COLOR_CANCEL;
+        if (row.status === '予約中') {
+          if (row.platform === 'なっぷ') {
+            color = '#43A047'; // なっぷ（緑）
+          } else {
+            color = '#E53935'; // 楽天トラベル（赤）
+          }
+        } else if (row.status === 'チェックイン完了') {
+          color = COLOR_CHECKIN;
+        } else if (row.status === 'キャンセル済み') {
+          color = COLOR_CANCEL;
+        }
+
+        const platformShort = row.platform === 'なっぷ' ? 'なっぷ' : '楽天';
 
         return {
           id: row.id,
-          title: `${row.name} (${row.site})`,
+          title: `[${platformShort}] ${row.name} (${row.site})`,
           start: row.startIso,
           end: row.endIso,
           color: color,

@@ -212,9 +212,6 @@ function extractAllPlatformEmails() {
         sheet.insertRowsBefore(2, rows.length);
         const valuesToWrite = rows.slice().reverse().map(i => i.row);
         sheet.getRange(2, 1, valuesToWrite.length, totalCols[plat]).setValues(valuesToWrite);
-
-        if (cols[plat]['予約ID']) sheet.getRange(2, cols[plat]['予約ID'], sheet.getLastRow() - 1, 1).setNumberFormat('@');
-        if (cols[plat]['電話番号']) sheet.getRange(2, cols[plat]['電話番号'], sheet.getLastRow() - 1, 1).setNumberFormat('@');
       }
 
       // 3) チェックイン完了更新

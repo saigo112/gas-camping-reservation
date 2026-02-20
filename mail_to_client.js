@@ -23,7 +23,7 @@ function sendAllReminders() {
   const CFG = getAppConfig_();
 
   const CONFIG = {
-    MODE: CFG.mode, 
+    MODE: CFG.mode,
     SHEET_ID: CFG.SHEET_ID,
     SHEET_NAME: CFG.mailer.SHEET_NAME,
     SETTING_SHEET_NAME: CFG.mailer.SETTING_SHEET_NAME || 'メール設定',
@@ -43,10 +43,13 @@ function sendAllReminders() {
   };
 
   const spreadsheet = SpreadsheetApp.openById(CONFIG.SHEET_ID);
-  const sheet = spreadsheet.getSheetByName(CONFIG.SHEET_NAME);
+
+  // ★ 自動送信は楽天トラベルシートのみ対象
+  const rakutenSheetName = CFG.extractor.PLATFORMS.rakuten.SHEET_NAME;
+  const sheet = spreadsheet.getSheetByName(rakutenSheetName);
   const settingSheet = spreadsheet.getSheetByName(CONFIG.SETTING_SHEET_NAME);
 
-  if (!sheet) throw new Error('メインシートが見つかりません: ' + CONFIG.SHEET_NAME);
+  if (!sheet) throw new Error('楽天トラベルシートが見つかりません: ' + rakutenSheetName);
   if (!settingSheet) throw new Error('設定シートが見つかりません: ' + CONFIG.SETTING_SHEET_NAME);
 
   // ★ テンプレート読み込み
@@ -59,7 +62,7 @@ function sendAllReminders() {
 
   // 必要ヘッダー
   const REQUIRED_HEADERS = [
-    '予約日時', '予約ID', 'チェックイン日時', 'チェックアウト日時', '名前', 'メールアドレス', 'ステータス', 
+    '予約日時', '予約ID', 'チェックイン日時', 'チェックアウト日時', '名前', 'メールアドレス', 'ステータス',
     'サイト名', '料金', '備考',
     FLAG_COLS.nextDay, FLAG_COLS.dayBefore
   ];
@@ -94,9 +97,9 @@ function sendAllReminders() {
   for (let r = 1; r < values.length; r++) {
     const row = values[r];
     const received = row[col['予約日時']];
-    const checkin  = row[col['チェックイン日時']];
+    const checkin = row[col['チェックイン日時']];
     const emailRaw = safeStr(row[col['メールアドレス']]);
-    const status   = safeStr(row[col['ステータス']]);
+    const status = safeStr(row[col['ステータス']]);
 
     if (status !== '予約中') {
       cnt.skippedNotActive++;
@@ -190,7 +193,7 @@ function sendEmail_(to, template, rowData, colMap, config) {
 
   if (config.DRY_RUN) {
     Logger.log(`[DRY_RUN] To: ${to}\nSubject: ${subject}\nAttachments: ${blobs.length}個`);
-    return true; 
+    return true;
   } else {
     try {
       GmailApp.sendEmail(to, subject, body, options);
@@ -267,7 +270,7 @@ function indexHeaders_(headerRow, names) {
   names.forEach(n => {
     const i = headerRow.indexOf(n);
     if (i === -1) Logger.log(`注意: ヘッダー ${n} が見つかりません`);
-    idx[n] = i; 
+    idx[n] = i;
   });
   return idx;
 }

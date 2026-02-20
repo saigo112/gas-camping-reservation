@@ -23,10 +23,13 @@
     - [x] Initialize git repository <!-- id: 13 -->
     - [x] Create README.md <!-- id: 14 -->
     - [x] Create GitHub repository and push code <!-- id: 15 -->
-- [/] Verification & Testing
+- [x] Verification & Testing
     - [x] Confirm Nap cancellation email subject <!-- id: 16 -->
     - [x] Implement email extraction debug helper in debug_tool.js <!-- id: 17 -->
     - [x] user to verify Nap reservation email extraction using debug tool <!-- id: 18 -->
     - [x] user to verify Nap cancellation email extraction <!-- id: 19 -->
     - [x] Fix sync_calendar.js function call inconsistency <!-- id: 20 -->
-    - [/] Debugging Nap extraction (extended to 30 days and added logs) <!-- id: 21 -->
+    - [x] Debugging Nap extraction (extended to 30 days and added logs) <!-- id: 21 -->
+    - [x] Restrict automatic emails to Rakuten Travel only <!-- id: 22 -->
+    - [x] Verify Calendar Sync for both platforms <!-- id: 23 -->
+    - [x] Add platform-specific color coding for Web App Calendar UI <!-- id: 24 -->
